@@ -16,3 +16,6 @@ license = "MIT"
 [lib]
 name = "encoding_types"
 path = "lib.rs"
+
+[features]
+unstable = []

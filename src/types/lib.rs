@@ -52,6 +52,8 @@
  * It still has to feed the input bytes starting at the second offset again.
  */
 
+#![cfg_attr(feature = "unstable", feature(vec_push_all))]
+
 use std::borrow::Cow;
 
 /// Error information from either encoder or decoder.
@@ -93,8 +95,14 @@ impl ByteWriter for Vec<u8> {
         self.push(b);
     }
 
+    #[cfg(not(feature = "unstable"))]
     fn write_bytes(&mut self, v: &[u8]) {
         self.extend(v.iter().cloned());
+    }
+
+    #[cfg(feature = "unstable")]
+    fn write_bytes(&mut self, v: &[u8]) {
+        self.push_all(v);
     }
 }
 
