@@ -4,9 +4,21 @@
 
 //! 7-bit ASCII encoding.
 
-use std::mem;
 use std::convert::Into;
 use types::*;
+
+#[cfg(all(feature = "enable-simd",
+          target_feature = "sse2",
+          not(all(target_os = "macos", debug_assertions))))]
+use simd::u8x16;
+#[cfg(all(feature = "enable-simd",
+          target_feature = "sse2",
+          not(all(target_os = "macos", debug_assertions))))]
+use simd::x86::sse2::Movemask;
+#[cfg(all(feature = "enable-simd",
+          target_feature = "sse2",
+          not(all(target_os = "macos", debug_assertions))))]
+const CHUNK_SIZE: usize = 16;
 
 /**
  * ASCII, also known as ISO/IEC 646:US.
@@ -37,18 +49,16 @@ impl RawEncoder for ASCIIEncoder {
 
     fn raw_feed(&mut self, input: &str, output: &mut ByteWriter) -> (usize, Option<CodecError>) {
         output.writer_hint(input.len());
-
-        match input.as_bytes().iter().position(|&ch| ch >= 0x80) {
-            Some(first_error) => {
-                output.write_bytes(&input.as_bytes()[..first_error]);
+        match raw_feed(input.as_bytes(), output) {
+            first_error if first_error < input.len() => {
                 let len = input[first_error..].chars().next().unwrap().len_utf8();
                 (first_error, Some(CodecError {
-                    upto: (first_error + len) as isize, cause: "unrepresentable character".into()
+                    upto: (first_error + len) as isize,
+                    cause: "unrepresentable character".into()
                 }))
-            }
-            None => {
-                output.write_bytes(input.as_bytes());
-                (input.len(), None)
+            },
+            len => {
+                (len, None)
             }
         }
     }
@@ -72,21 +82,15 @@ impl RawDecoder for ASCIIDecoder {
 
     fn raw_feed(&mut self, input: &[u8], output: &mut StringWriter) -> (usize, Option<CodecError>) {
         output.writer_hint(input.len());
-
-        fn write_ascii_bytes(output: &mut StringWriter, buf: &[u8]) {
-            output.write_str(unsafe {mem::transmute(buf)});
-        }
-
-        match input.iter().position(|&ch| ch >= 0x80) {
-            Some(first_error) => {
-                write_ascii_bytes(output, &input[..first_error]);
+        match raw_feed(input, unsafe { output.as_byte_writer() }) {
+            first_error if first_error < input.len() => {
                 (first_error, Some(CodecError {
-                    upto: first_error as isize + 1, cause: "invalid sequence".into()
+                    upto: first_error as isize + 1,
+                    cause: "invalid sequence".into()
                 }))
-            }
-            None => {
-                write_ascii_bytes(output, input);
-                (input.len(), None)
+            },
+            len => {
+                (len, None)
             }
         }
     }
@@ -94,6 +98,46 @@ impl RawDecoder for ASCIIDecoder {
     fn raw_finish(&mut self, _output: &mut StringWriter) -> Option<CodecError> {
         None
     }
+}
+
+#[cfg(any(not(feature = "enable-simd"),
+          not(target_feature = "sse2"),
+          all(target_os = "macos", debug_assertions)))]
+#[inline]
+fn raw_feed(input: &[u8], output: &mut ByteWriter) -> usize {
+    slow_raw_feed(input, output, 0)
+}
+
+#[cfg(all(feature = "enable-simd",
+          target_feature = "sse2",
+          not(all(target_os = "macos", debug_assertions))))]
+#[inline]
+fn raw_feed(input: &[u8], output: &mut ByteWriter) -> usize {
+    let total = input.len() / CHUNK_SIZE * CHUNK_SIZE;
+    let mut sofar = 0;
+    while sofar != total {
+        let v = u8x16::load(input, sofar);
+        let mask = v.movemask();
+        if mask == 0 {
+            sofar += CHUNK_SIZE;
+        } else {
+            sofar += (mask as u16).trailing_zeros() as usize;
+            output.write_bytes(&input[..sofar]);
+            return sofar;
+        }
+    }
+    slow_raw_feed(input, output, sofar)
+}
+
+#[inline]
+fn slow_raw_feed(input: &[u8], output: &mut ByteWriter, sofar: usize)
+               -> usize {
+    let sofar = match input[sofar..].iter().position(|&ch| ch >= 0x80) {
+        Some(first_error) => sofar + first_error,
+        None => input.len(),
+    };
+    output.write_bytes(&input[..sofar]);
+    sofar
 }
 
 #[cfg(test)]
@@ -154,7 +198,7 @@ mod tests {
 
     #[bench]
     fn bench_decode_replace(bencher: &mut test::Bencher) {
-        let s = testutils::KOREAN_TEXT.as_bytes();
+        let s = testutils::INVALID_UTF8_TEXT;
         bencher.bytes = s.len() as u64;
         bencher.iter(|| test::black_box({
             ASCIIEncoding.decode(s, DecoderTrap::Replace)

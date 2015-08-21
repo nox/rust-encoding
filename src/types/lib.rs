@@ -121,6 +121,9 @@ pub trait StringWriter {
 
     /// Writes a string.
     fn write_str(&mut self, s: &str);
+
+    /// Returns this writer as a byte writer.
+    unsafe fn as_byte_writer(&mut self) -> &mut ByteWriter;
 }
 
 impl StringWriter for String {
@@ -135,6 +138,11 @@ impl StringWriter for String {
 
     fn write_str(&mut self, s: &str) {
         self.push_str(s);
+    }
+
+    #[inline]
+    unsafe fn as_byte_writer(&mut self) -> &mut ByteWriter {
+        self.as_mut_vec()
     }
 }
 

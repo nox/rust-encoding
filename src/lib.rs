@@ -215,6 +215,9 @@ Whenever in doubt, look at the source code and specifications for detailed expla
 
 #![cfg_attr(test, feature(test))] // lib stability features as per RFC #507
 
+#![cfg_attr(feature = "enable-simd", feature(cfg_target_feature))]
+#[cfg(feature = "enable-simd")] extern crate simd;
+
 extern crate encoding_types;
 extern crate encoding_index_singlebyte as index_singlebyte;
 extern crate encoding_index_korean as index_korean;

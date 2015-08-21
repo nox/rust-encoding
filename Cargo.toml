@@ -15,7 +15,13 @@ license = "MIT"
 name = "encoding"
 
 [features]
+enable-simd = ["simd", "unstable"]
 unstable = ["encoding-types/unstable"]
+
+[dependencies.simd]
+git = "https://github.com/nox/simd"
+rev = "438780ca236b1ed2caf032edebda9c9362eaabc6"
+optional = true
 
 [dependencies.encoding-types]
 version = "0.2"
