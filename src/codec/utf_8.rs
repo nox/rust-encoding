@@ -67,7 +67,7 @@ impl RawEncoder for UTF8Encoder {
 
     fn raw_feed(&mut self, input: &str, output: &mut ByteWriter) -> (usize, Option<CodecError>) {
         let input: &[u8] = input.as_bytes();
-        assert!(str::from_utf8(input).is_ok());
+        debug_assert!(str::from_utf8(input).is_ok());
         output.write_bytes(input);
         (input.len(), None)
     }
@@ -202,7 +202,7 @@ impl RawDecoder for UTF8Decoder {
         if state != ACCEPT_STATE {
             Some(CodecError { upto: 0, cause: "incomplete sequence".into() })
         } else {
-            assert!(queuelen == 0);
+            debug_assert!(queuelen == 0);
             None
         }
     }
